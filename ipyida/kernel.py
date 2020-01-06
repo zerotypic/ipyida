@@ -22,10 +22,12 @@ import idaapi
 _ida_stdout = sys.stdout
 _ida_stderr = sys.stderr
 
-# Init file.
-_ipyidarc = os.path.join(idaapi.get_user_idadir(), 'ipyidarc.py')
+# Path to a file to load into the kernel's namespace during its creation.
+# Similar to the idapythonrc.py file.
+IPYIDARC_PATH = os.path.join(idaapi.get_user_idadir(), 'ipyidarc.py')
 
-if sys.__stdout__.fileno() < 0:
+if sys.__stdout__ is None or sys.__stdout__.fileno() < 0:
+
     # IPython insist on using sys.__stdout__, however it's not available in IDA
     # on Windows. We'll replace __stdout__ to the "nul" to avoid exception when
     # writing and flushing on the bogus file descriptor.
@@ -72,9 +74,9 @@ class IPythonKernel(object):
         if IPKernelApp.initialized():
             app = IPKernelApp.instance()
         else:
-            # Load ~/.idapro/ipyidarc.py into the user namespace if it exists.
-            if os.path.exists(_ipyidarc):
-                IPKernelApp.exec_files = [ _ipyidarc ]
+            # Load IPyIDA's user init file into the user namespace if it exists.
+            if os.path.exists(IPYIDARC_PATH):
+                IPKernelApp.exec_files = [ IPYIDARC_PATH ]
 
             app = IPKernelApp.instance(
                 outstream_class='ipyida.kernel.IDATeeOutStream'

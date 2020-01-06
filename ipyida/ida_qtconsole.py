@@ -90,6 +90,21 @@ class IdaRichJupyterWidget(RichJupyterWidget):
                 indent = reply['content'].get('indent', u'')
                 return status != 'incomplete', indent
 
+_user_widget_options = {}
+
+def set_widget_options(options):
+    """"
+    This function is intended to be called in ipyidarc.py to set additionnal
+    options during the creation of if the RichJupyterWidget.
+
+    Args: options is expected to be a dict
+
+    See https://qtconsole.readthedocs.io/en/stable/config_options.html for a
+    list of available options.
+    """
+    global _user_widget_options
+    _user_widget_options = options.copy()
+
 class IPythonConsole(idaapi.PluginForm):
     
     def __init__(self, connection_file, *args):
@@ -128,6 +143,7 @@ class IPythonConsole(idaapi.PluginForm):
             # problem is present only on Linux.
             # See: https://github.com/eset/ipyida/issues/8
             widget_options["gui_completion"] = 'droplist'
+        widget_options.update(_user_widget_options)
         self.ipython_widget = IdaRichJupyterWidget(self.parent, **widget_options)
         self.ipython_widget.kernel_manager = self.kernel_manager
         self.ipython_widget.kernel_client = self.kernel_client
@@ -136,7 +152,17 @@ class IPythonConsole(idaapi.PluginForm):
         return layout
 
     def Show(self, name="IPython Console"):
-        return idaapi.PluginForm.Show(self, name)
+        r = idaapi.PluginForm.Show(self, name)
+        self.setFocusToPrompt()
+        return r
+
+    def setFocusToPrompt(self):
+        # This relies on the internal _control widget but it's the most reliable
+        # way I found so far.
+        if hasattr(self.ipython_widget, "_control"):
+            self.ipython_widget._control.setFocus()
+        else:
+            print("[IPyIDA] setFocusToPrompt: Widget has no _control attribute.")
 
     def OnClose(self, form):
         try:
