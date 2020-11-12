@@ -56,9 +56,31 @@ from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.manager import QtKernelManager
 from qtconsole.client import QtKernelClient
 from jupyter_client import find_connection_file
+import sip
 import ipyida.kernel
 
 class IdaRichJupyterWidget(RichJupyterWidget):
+
+    def __init__(self, ida_console, *args, **kwargs):
+        super(IdaRichJupyterWidget, self).__init__(*args, **kwargs)
+        # Store a reference to the containing IPythonConsole
+        self._ida_console = ida_console
+    #enddef
+
+    def _keyboard_quit(self):
+        # If the input buffer is empty, and the escape key was pressed,
+        # return focus to the widget that was originally holding focus
+        # before the IPython console took over.
+        if self.input_buffer == "" and self._ida_console.prev_focus_widget != None:
+            wid = self._ida_console.prev_focus_widget
+            if sip.isdeleted(wid): return
+            twid = idaapi.PluginForm.QtWidgetToTWidget(wid)
+            idaapi.activate_widget(twid, True)
+            self._ida_console.prev_focus_widget = None
+        else:
+            super(IdaRichJupyterWidget, self)._keyboard_quit()
+
+class IdaRichJupyterWidget4(IdaRichJupyterWidget):
     def _is_complete(self, source, interactive):
         # The original implementation in qtconsole is synchronous. IDA Python is
         # single threaded and the IPython kernel runs on the same thread as the
@@ -118,6 +140,7 @@ class IPythonConsole(idaapi.PluginForm):
     def __init__(self, connection_file, *args):
         super(IPythonConsole, self).__init__(*args)
         self.connection_file = connection_file
+        self.prev_focus_widget = None
     
     def OnCreate(self, form):
         try:
@@ -153,9 +176,9 @@ class IPythonConsole(idaapi.PluginForm):
             widget_options["gui_completion"] = 'droplist'
         widget_options.update(_user_widget_options)
         if ipyida.kernel.is_using_ipykernel_5():
-            self.ipython_widget = RichJupyterWidget(self.parent, **widget_options)
+            self.ipython_widget = IdaRichJupyterWidget(self, self.parent, **widget_options)
         else:
-            self.ipython_widget = IdaRichJupyterWidget(self.parent, **widget_options)
+            self.ipython_widget = IdaRichJupyterWidget4(self, self.parent, **widget_options)
         self.ipython_widget.kernel_manager = self.kernel_manager
         self.ipython_widget.kernel_client = self.kernel_client
         layout.addWidget(self.ipython_widget)
@@ -163,6 +186,10 @@ class IPythonConsole(idaapi.PluginForm):
         return layout
 
     def Show(self, name="IPython Console"):
+        # Save widget that is currently focused
+        from PyQt5.QtWidgets import QApplication
+        qapp = QApplication.instance()
+        self.prev_focus_widget = qapp.focusWidget()
         r = idaapi.PluginForm.Show(self, name)
         self.setFocusToPrompt()
         return r
