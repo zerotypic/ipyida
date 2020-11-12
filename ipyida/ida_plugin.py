@@ -21,6 +21,9 @@ class IPyIDAPlugIn(idaapi.plugin_t):
         self.kernel = _kernel
         self.widget = None
         monkey_patch_IDAPython_ExecScript()
+        # Save a reference to this plugin in the module, so it can be accessed
+        import ipyida
+        ipyida._PLUGIN = self
         return idaapi.PLUGIN_KEEP
 
     def run(self, args):
