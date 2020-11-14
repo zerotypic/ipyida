@@ -6,6 +6,9 @@
 # Author: Marc-Etienne M.Léveillé <leveille@eset.com>
 # See LICENSE file for redistribution.
 
+import os
+import sys
+
 import idaapi
 from ipyida import ida_qtconsole, kernel
 
@@ -40,24 +43,28 @@ class IPyIDAPlugIn(idaapi.plugin_t):
         if self.kernel:
             self.kernel.stop()
 
-
 def PLUGIN_ENTRY():
     return IPyIDAPlugIn()
 
-# Links Qt's event loop with asyncio's event loop. This allows asyncio to
-# work properly, which is required for ipykernel >= 5 (more specifically,
-# because ipykernel uses tornado, which is backed by asyncio).
 def _setup_asyncio_event_loop():
-    if ida_qtconsole.is_using_pyqt5() and kernel.is_using_ipykernel_5():
-        from PyQt5.QtWidgets import QApplication
-        import qasync
-        import asyncio
-        if isinstance(asyncio.get_event_loop(), qasync.QEventLoop):
-            print("Note: qasync event loop already set up.")
-        else:
-            qapp = QApplication.instance()
-            loop = qasync.QEventLoop(qapp, already_running=True)
-            asyncio.set_event_loop(loop)            
+    """
+    Links Qt's event loop with asyncio's event loop. This allows asyncio to
+    work properly, which is required for ipykernel >= 5 (more specifically,
+    because ipykernel uses tornado, which is backed by asyncio).
+    """
+    if not (ida_qtconsole.USING_PY3 and kernel.is_using_ipykernel_5()):
+        return
+
+    from PyQt5.QtWidgets import QApplication
+    import qasync
+    import asyncio
+
+    if isinstance(asyncio.get_event_loop(), qasync.QEventLoop):
+        print("Note: qasync event loop already set up.")
+    else:
+        qapp = QApplication.instance()
+        loop = qasync.QEventLoop(qapp, already_running=True)
+        asyncio.set_event_loop(loop)
 
 _setup_asyncio_event_loop()
 
@@ -98,19 +105,27 @@ def monkey_patch_IDAPython_ExecScript():
     """
     This funtion wraps IDAPython_ExecScript to avoid having an empty string has
     a __file__ attribute of a module.
+
     See https://github.com/idapython/src/pull/23
     """
+
     # Test the behavior IDAPython_ExecScript see if it needs patching
-    import sys, os
     fake_globals = {}
-    idaapi.IDAPython_ExecScript(os.devnull, fake_globals, False)
+    if ida_qtconsole.USING_IDA7API:
+        idaapi.IDAPython_ExecScript(os.devnull, fake_globals, False)
+    else:
+        idaapi.IDAPython_ExecScript(os.devnull, fake_globals)
+
     if "__file__" in fake_globals:
         # Monkey patch IDAPython_ExecScript
         original_IDAPython_ExecScript = idaapi.IDAPython_ExecScript
         def IDAPython_ExecScript_wrap(script, g, print_error=True):
             has_file = "__file__" in g
             try:
-                original_IDAPython_ExecScript(script, g, print_error)
+                if idaapi.USING_IDA7API:
+                    original_IDAPython_ExecScript(script, g, print_error)
+                else:
+                    original_IDAPython_ExecScript(script, g)
             finally:
                 if not has_file and "__file__" in g:
                     del g["__file__"]

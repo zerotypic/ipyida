@@ -7,28 +7,32 @@
 # Author: Marc-Etienne M.Léveillé <leveille@eset.com>
 # See LICENSE file for redistribution.
 
+import os
+import sys
+import types
+
 import idaapi
 
-def is_using_pyqt5():
-    if hasattr(idaapi, "get_kernel_version"):
-        _ida_version_major, _ida_version_minor = map(int, idaapi.get_kernel_version().split("."))
-        return _ida_version_major > 6 or (_ida_version_major == 6 and _ida_version_minor >= 9)
-    else:
-        return False
+USING_PY3 = sys.version_info[0] == 3
+USING_IDA7API = bool(idaapi.IDA_SDK_VERSION >= 700)
 
-if is_using_pyqt5():
+# IDA 6.95+
+try:
+    import PyQt5
     from PyQt5 import QtGui, QtWidgets
-else:
-    from PySide import QtGui
+    USING_PYQT5 = True
 
-import sys
-import os
-import types
+# < IDA 6.90
+except ImportError:
+    import PySide
+    from PySide import QtGui
+    QtWidgets = QtGui
+    USING_PYQT5 = False
 
 # QtSvg binairies are not bundled with IDA. So we monkey patch PySide to avoid
 # IPython to load a module with missing binary files. This *must* happend before
 # importing RichJupyterWidget
-if is_using_pyqt5():
+if USING_PYQT5:
     try:
         # In the case of pyqt5, we have to avoid patch the binding detection
         # used in qtconsole <= 4.6.
@@ -43,11 +47,11 @@ if is_using_pyqt5():
     except ImportError:
         # qtconsole.qt_loaders doesn't exist in qtconsole >= 4.7. It uses QtPy.
         os.environ["QT_API"] = "pyqt5"
-    import PyQt5
     sys.modules["PyQt5.QtSvg"] = types.ModuleType("EmptyQtSvg")
     sys.modules["PyQt5.QtPrintSupport"] = types.ModuleType("EmptyQtPrintSupport")
+
+# PySide
 else:
-    import PySide
     sys.modules["PySide.QtSvg"] = types.ModuleType("EmptyQtSvg")
     sys.modules["PySide.QtPrintSupport"] = types.ModuleType("EmptyQtPrintSupport")
     os.environ["QT_API"] = "pyside"
@@ -56,7 +60,7 @@ from qtconsole.rich_jupyter_widget import RichJupyterWidget
 from qtconsole.manager import QtKernelManager
 from qtconsole.client import QtKernelClient
 from jupyter_client import find_connection_file
-import sip
+
 import ipyida.kernel
 
 class IdaRichJupyterWidget(RichJupyterWidget):
@@ -71,11 +75,12 @@ class IdaRichJupyterWidget(RichJupyterWidget):
         # If the input buffer is empty, and the escape key was pressed,
         # return focus to the widget that was originally holding focus
         # before the IPython console took over.
-        if self.input_buffer == "" and self._ida_console.prev_focus_widget != None:
-            wid = self._ida_console.prev_focus_widget
-            if sip.isdeleted(wid): return
-            twid = idaapi.PluginForm.QtWidgetToTWidget(wid)
-            idaapi.activate_widget(twid, True)
+        prev_widget = self._ida_console.prev_focus_widget
+        if self.input_buffer == "" and prev_widget != None:
+            if USING_IDA7API:
+                idaapi.activate_widget(prev_widget, True)
+            else:
+                idaapi.switchto_tform(prev_widget, True)
             self._ida_console.prev_focus_widget = None
         else:
             super(IdaRichJupyterWidget, self)._keyboard_quit()
@@ -144,7 +149,7 @@ class IPythonConsole(idaapi.PluginForm):
     
     def OnCreate(self, form):
         try:
-            if is_using_pyqt5():
+            if USING_PYQT5:
                 self.parent = self.FormToPyQtWidget(form, ctx=sys.modules[__name__])
             else:
                 self.parent = self.FormToPySideWidget(form, ctx=sys.modules[__name__])
@@ -155,7 +160,7 @@ class IPythonConsole(idaapi.PluginForm):
             print(traceback.format_exc())
 
     def _createConsoleWidget(self):
-        if is_using_pyqt5():
+        if USING_PYQT5:
             layout = QtWidgets.QVBoxLayout()
         else:
             layout = QtGui.QVBoxLayout()
@@ -187,9 +192,10 @@ class IPythonConsole(idaapi.PluginForm):
 
     def Show(self, name="IPython Console"):
         # Save widget that is currently focused
-        from PyQt5.QtWidgets import QApplication
-        qapp = QApplication.instance()
-        self.prev_focus_widget = qapp.focusWidget()
+        if USING_IDA7API:
+            self.prev_focus_widget = idaapi.get_current_widget()
+        else:
+            self.prev_focus_widget = idaapi.get_current_tform()
         r = idaapi.PluginForm.Show(self, name)
         self.setFocusToPrompt()
         return r

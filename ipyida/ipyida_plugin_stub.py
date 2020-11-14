@@ -9,6 +9,7 @@ from __future__ import print_function
 
 try:
     from ipyida.ida_plugin import PLUGIN_ENTRY, IPyIDAPlugIn
-except ImportError:
+except Exception as e:
     print("[WARN] Could not load IPyIDA plugin. ipyida Python package " \
-          "doesn't seem to be installed.")
+          "doesn't seem to be installed correctly.")
+    print("[WARN] - Error", e)
