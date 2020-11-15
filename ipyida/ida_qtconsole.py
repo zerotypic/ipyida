@@ -13,21 +13,7 @@ import types
 
 import idaapi
 
-USING_PY3 = sys.version_info[0] == 3
-USING_IDA7API = bool(idaapi.IDA_SDK_VERSION >= 700)
-
-# IDA 6.95+
-try:
-    import PyQt5
-    from PyQt5 import QtGui, QtWidgets
-    USING_PYQT5 = True
-
-# < IDA 6.90
-except ImportError:
-    import PySide
-    from PySide import QtGui
-    QtWidgets = QtGui
-    USING_PYQT5 = False
+from ipyida.utils import *
 
 # QtSvg binairies are not bundled with IDA. So we monkey patch PySide to avoid
 # IPython to load a module with missing binary files. This *must* happend before
@@ -141,9 +127,11 @@ def set_widget_options(options):
     _user_widget_options = options.copy()
 
 class IPythonConsole(idaapi.PluginForm):
-    
-    def __init__(self, connection_file, *args):
+
+    def __init__(self, plugin, connection_file, *args):
         super(IPythonConsole, self).__init__(*args)
+        self._plugin = plugin
+        self._window_title = "IPython Console"
         self.connection_file = connection_file
         self.prev_focus_widget = None
     
@@ -190,17 +178,33 @@ class IPythonConsole(idaapi.PluginForm):
 
         return layout
 
-    def Show(self, name="IPython Console"):
-        # Save widget that is currently focused
-        if USING_IDA7API:
-            self.prev_focus_widget = idaapi.get_current_widget()
+    def Show(self, name=None):
+        """
+        Show the IPython Console.
+        """
+        if not name:
+            name = self._window_title
         else:
-            self.prev_focus_widget = idaapi.get_current_tform()
-        r = idaapi.PluginForm.Show(self, name)
+            self._window_title = name
+
+        # Show the IPython Console
+        r = idaapi.PluginForm.Show(self, name, 0x40) # 0x40 == PERSIST
+        self.dockWithIDAConsole()
         self.setFocusToPrompt()
+
         return r
 
     def setFocusToPrompt(self):
+
+        # Save widget that is currently focused, and switch+activate the IPy console
+        if USING_IDA7API:
+            self.prev_focus_widget = idaapi.get_current_widget()
+            idaapi.activate_widget(idaapi.find_widget(self._window_title), True)
+        else:
+            self.prev_focus_widget = idaapi.get_current_tform()
+            idaapi.switchto_tform(idaapi.find_tform(self._window_title), True)
+
+        # TODO: remove?
         # This relies on the internal _control widget but it's the most reliable
         # way I found so far.
         if hasattr(self.ipython_widget, "_control"):
@@ -208,10 +212,22 @@ class IPythonConsole(idaapi.PluginForm):
         else:
             print("[IPyIDA] setFocusToPrompt: Widget has no _control attribute.")
 
+    def dockWithIDAConsole(self):
+        """
+        Dock this IPython Console over the IDA Console (Output window).
+        """
+        idaapi.set_dock_pos(self._window_title, "Output window", idaapi.DP_INSIDE)
+
     def OnClose(self, form):
+        """
+        The widget is being closed / deleted.
+        """
         try:
             self.kernel_client.stop_channels()
         except:
             import traceback
             print(traceback.format_exc())
 
+        # a little dirty... but this window is getting DELETED so the plugin
+        # absolutely should not be trying to use it anymore.
+        self._plugin.widget = None

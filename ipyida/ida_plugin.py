@@ -10,41 +10,83 @@ import os
 import sys
 
 import idaapi
+
+from ipyida.utils import *
 from ipyida import ida_qtconsole, kernel
 
-class IPyIDAPlugIn(idaapi.plugin_t):
-    wanted_name = "IPyIDA"
-    wanted_hotkey = "Shift-."
-    flags = 0
-    comment = ""
-    help = "Starts an IPython qtconsole in IDA Pro"
-    
-    def init(self):
-        global _kernel
-        self.kernel = _kernel
-        self.widget = None
-        monkey_patch_IDAPython_ExecScript()
-        # Save a reference to this plugin in the module, so it can be accessed
-        import ipyida
-        ipyida._PLUGIN = self
-        return idaapi.PLUGIN_KEEP
-
-    def run(self, args):
-        if not self.kernel.started:
-            self.kernel.start()
-        if self.widget is None:
-            self.widget = ida_qtconsole.IPythonConsole(self.kernel.connection_file)
-        self.widget.Show()
-
-    def term(self):
-        if self.widget:
-            self.widget.Close(0)
-            self.widget = None
-        if self.kernel:
-            self.kernel.stop()
+#-----------------------------------------------------------------------------
+# IDA Plugin
+#-----------------------------------------------------------------------------
 
 def PLUGIN_ENTRY():
     return IPyIDAPlugIn()
+
+class IPyIDAPlugIn(idaapi.plugin_t):
+
+    # plugin info
+    wanted_name = "IPyIDA"
+    wanted_hotkey = "Shift-."
+    comment = ""
+    help = "Starts an IPython console in IDA Pro"
+
+    # load/unload the plugin with IDB's
+    flags = idaapi.PLUGIN_PROC
+    
+    def init(self):
+        """
+        An IDB is opening, load the plugin.
+        """
+        self.kernel = kernel.IPythonKernel()
+        self.kernel.start()
+        
+        self.widget = ida_qtconsole.IPythonConsole(self, self.kernel.connection_file)
+
+        self._startup_hooks = UIHooks()
+        self._startup_hooks.ready_to_run = self._ready_to_run
+        self._startup_hooks.hook()
+
+        # Save a reference to this plugin in the module, so it can be accessed
+        # TODO: remove?
+        import ipyida
+        ipyida._PLUGIN = self
+
+        return idaapi.PLUGIN_KEEP
+
+    def run(self, _):
+        """
+        Handle plugin hotkey activation.
+        """
+        if not self.widget:
+            self.widget = ida_qtconsole.IPythonConsole(self, self.kernel.connection_file)
+            self.widget.Show()
+        else:
+            self.widget.setFocusToPrompt()
+
+    def term(self):
+        """
+        The IDB is closing, unload the plugin.
+        """
+
+        # Cleanup the console widget
+        if self.widget:
+            self.widget.Close(0)
+            self.widget = None
+
+        # Spin down the IPython kernel
+        if self.kernel:
+            self.kernel.stop()
+            self.kernel = None
+
+    def _ready_to_run(self):
+        """
+        Callback executed when the IDA UI has setteled upon IDB load.
+        """
+        self._startup_hooks.unhook()
+        self.widget.Show()
+
+#-----------------------------------------------------------------------------
+# IDA Startup
+#-----------------------------------------------------------------------------
 
 def _setup_asyncio_event_loop():
     """
@@ -52,7 +94,7 @@ def _setup_asyncio_event_loop():
     work properly, which is required for ipykernel >= 5 (more specifically,
     because ipykernel uses tornado, which is backed by asyncio).
     """
-    if not (ida_qtconsole.USING_PY3 and kernel.is_using_ipykernel_5()):
+    if not (USING_PY3 and kernel.is_using_ipykernel_5()):
         return
 
     from PyQt5.QtWidgets import QApplication
@@ -66,76 +108,6 @@ def _setup_asyncio_event_loop():
         loop = qasync.QEventLoop(qapp, already_running=True)
         asyncio.set_event_loop(loop)
 
+# run immediately when IDA loads
 _setup_asyncio_event_loop()
-
-_kernel = kernel.IPythonKernel()
-_kernel.start()
-
-def _do_load():
-    ipyida_plugin_path = __file__
-    if ipyida_plugin_path.endswith("pyc"):
-        # IDA Python can't load pyc, only the Python source so we remove the "c"
-        ipyida_plugin_path = ipyida_plugin_path[:-1]
-    idaapi.load_plugin(ipyida_plugin_path)
-
-def load():
-    """
-    Perform necessary steps to load the plugin inside IDA. If no IDB is open, it
-    will wait until it is open to load it.
-    """
-    if idaapi.get_root_filename() is None:
-        # No idb open yet
-        def handler(event, old=0):
-            if event == idaapi.NW_OPENIDB:
-                _do_load()
-            elif event == idaapi.NW_TERMIDA:
-                idaapi.notify_when(idaapi.NW_TERMIDA | idaapi.NW_OPENIDB | idaapi.NW_REMOVE, handler)
-        def _install():
-            idaapi.notify_when(idaapi.NW_TERMIDA | idaapi.NW_OPENIDB, handler)
-            # return -1 to remove the timer
-            return -1
-        # It's possible we can't use the notify_when API call yet when IDA opens
-        # so try register a timer to add the event listner in the proper "state"
-        idaapi.register_timer(1, _install)
-    else:
-        # IDA is fully loaded and an idb is open, just load the plugin.
-        _do_load()
-
-def monkey_patch_IDAPython_ExecScript():
-    """
-    This funtion wraps IDAPython_ExecScript to avoid having an empty string has
-    a __file__ attribute of a module.
-
-    See https://github.com/idapython/src/pull/23
-    """
-
-    # Test the behavior IDAPython_ExecScript see if it needs patching
-    fake_globals = {}
-    if ida_qtconsole.USING_IDA7API:
-        idaapi.IDAPython_ExecScript(os.devnull, fake_globals, False)
-    else:
-        idaapi.IDAPython_ExecScript(os.devnull, fake_globals)
-
-    if "__file__" in fake_globals:
-        # Monkey patch IDAPython_ExecScript
-        original_IDAPython_ExecScript = idaapi.IDAPython_ExecScript
-        def IDAPython_ExecScript_wrap(script, g, print_error=True):
-            has_file = "__file__" in g
-            try:
-                if idaapi.USING_IDA7API:
-                    original_IDAPython_ExecScript(script, g, print_error)
-                else:
-                    original_IDAPython_ExecScript(script, g)
-            finally:
-                if not has_file and "__file__" in g:
-                    del g["__file__"]
-        idaapi.IDAPython_ExecScript = IDAPython_ExecScript_wrap
-        try:
-            # Remove the empty strings on existing modules
-            for mod_name in sys.modules:
-                if hasattr(sys.modules[mod_name], "__file__") and \
-                   bool(sys.modules[mod_name].__file__) is False:
-                    del sys.modules[mod_name].__file__
-        except RuntimeError:
-            # Best effort here, let's not crash if something goes wrong
-            pass
+monkey_patch_IDAPython_ExecScript()
