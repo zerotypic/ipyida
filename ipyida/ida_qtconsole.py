@@ -61,13 +61,17 @@ class IdaRichJupyterWidget(RichJupyterWidget):
         # If the input buffer is empty, and the escape key was pressed,
         # return focus to the widget that was originally holding focus
         # before the IPython console took over.
-        prev_widget = self._ida_console.prev_focus_widget
-        if self.input_buffer == "" and prev_widget != None:
+        prev_widget_name = self._ida_console.prev_focus_widget_name
+        if self.input_buffer == "" and prev_widget_name != None:
             if USING_IDA7API:
-                idaapi.activate_widget(prev_widget, True)
+                prev_widget = idaapi.find_widget(prev_widget_name)
+                if prev_widget != None:
+                    idaapi.activate_widget(prev_widget, True)
             else:
-                idaapi.switchto_tform(prev_widget, True)
-            self._ida_console.prev_focus_widget = None
+                prev_widget = idaapi.find_tform(prev_widget_name)
+                if prev_widget != None:
+                    idaapi.switchto_tform(prev_widget, True)
+            self._ida_console.prev_focus_widget_name = None
         else:
             super(IdaRichJupyterWidget, self)._keyboard_quit()
 
@@ -133,8 +137,8 @@ class IPythonConsole(idaapi.PluginForm):
         self._plugin = plugin
         self._window_title = "IPython Console"
         self.connection_file = connection_file
-        self.prev_focus_widget = None
-    
+        self.prev_focus_widget_name = None
+
     def OnCreate(self, form):
         try:
             if USING_PYQT5:
@@ -198,10 +202,11 @@ class IPythonConsole(idaapi.PluginForm):
 
         # Save widget that is currently focused, and switch+activate the IPy console
         if USING_IDA7API:
-            self.prev_focus_widget = idaapi.get_current_widget()
+            self.prev_focus_widget_name = idaapi.get_widget_title(idaapi.get_current_widget())
             idaapi.activate_widget(idaapi.find_widget(self._window_title), True)
         else:
-            self.prev_focus_widget = idaapi.get_current_tform()
+            # XXX: Not tested as I don't have an older copy of IDA available -- zerotypic
+            self.prev_focus_widget_name = idaapi.get_tform_title(idaapi.get_current_tform())
             idaapi.switchto_tform(idaapi.find_tform(self._window_title), True)
 
         # TODO: remove?
