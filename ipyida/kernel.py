@@ -8,6 +8,7 @@
 # Author: Marc-Etienne M.Léveillé <leveille@eset.com>
 # See LICENSE file for redistribution.
 
+import ipykernel
 from ipykernel.kernelapp import IPKernelApp
 import IPython.utils.frame
 import ipykernel.iostream
@@ -15,6 +16,8 @@ import ipykernel.iostream
 import sys
 import os
 import idaapi
+
+USING_IPYKERNEL5 = hasattr(ipykernel.kernelbase.Kernel, "process_one")
 
 # The IPython kernel will override sys.std{out,err}. We keep a copy to let the
 # existing embeded IDA console continue working, and also let IPython output to
@@ -37,11 +40,6 @@ if sys.__stdout__ is None or sys.__stdout__.fileno() < 0:
 # expect exception to be written to sys.stderr (overridden by IDA) to print them
 # in the console window. Used by wrap_excepthook.
 _ida_excepthook = sys.excepthook
-
-def is_using_ipykernel_5():
-    import ipykernel
-    return hasattr(ipykernel.kernelbase.Kernel, "process_one")
-
 
 class IDATeeOutStream(ipykernel.iostream.OutStream):
 
@@ -105,7 +103,7 @@ class IPythonKernel(object):
 
         self.connection_file = app.connection_file
 
-        if not is_using_ipykernel_5():
+        if not USING_IPYKERNEL5:
             app.kernel.do_one_iteration()
 
             def ipython_kernel_iteration():
@@ -129,7 +127,7 @@ class IPythonKernel(object):
 
 def do_one_iteration():
     """Perform an iteration on IPython kernel runloop"""
-    if is_using_ipykernel_5():
+    if USING_IPYKERNEL5:
         raise Exception("Should not call this when ipykernel >= 5")
     if IPKernelApp.initialized():
         app = IPKernelApp.instance()

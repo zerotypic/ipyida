@@ -14,6 +14,7 @@ import types
 import idaapi
 
 from ipyida.utils import *
+from ipyida.kernel import USING_IPYKERNEL5
 
 # QtSvg binairies are not bundled with IDA. So we monkey patch PySide to avoid
 # IPython to load a module with missing binary files. This *must* happend before
@@ -55,7 +56,6 @@ class IdaRichJupyterWidget(RichJupyterWidget):
         super(IdaRichJupyterWidget, self).__init__(*args, **kwargs)
         # Store a reference to the containing IPythonConsole
         self._ida_console = ida_console
-    #enddef
 
     def _keyboard_quit(self):
         # If the input buffer is empty, and the escape key was pressed,
@@ -75,8 +75,10 @@ class IdaRichJupyterWidget(RichJupyterWidget):
         else:
             super(IdaRichJupyterWidget, self)._keyboard_quit()
 
-class IdaRichJupyterWidget4(IdaRichJupyterWidget):
     def _is_complete(self, source, interactive):
+        if USING_IPYKERNEL5:
+            return super(IdaRichJupyterWidget, self)._is_complete(source, interactive)
+
         # The original implementation in qtconsole is synchronous. IDA Python is
         # single threaded and the IPython kernel runs on the same thread as the
         # UI so the is_complete request can never be processed by the kernel,
@@ -172,10 +174,7 @@ class IPythonConsole(idaapi.PluginForm):
             # See: https://github.com/eset/ipyida/issues/8
             widget_options["gui_completion"] = 'droplist'
         widget_options.update(_user_widget_options)
-        if ipyida.kernel.is_using_ipykernel_5():
-            self.ipython_widget = IdaRichJupyterWidget(self, self.parent, **widget_options)
-        else:
-            self.ipython_widget = IdaRichJupyterWidget4(self, self.parent, **widget_options)
+        self.ipython_widget = IdaRichJupyterWidget(self, self.parent, **widget_options)
         self.ipython_widget.kernel_manager = self.kernel_manager
         self.ipython_widget.kernel_client = self.kernel_client
         layout.addWidget(self.ipython_widget)

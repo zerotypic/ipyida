@@ -12,7 +12,8 @@ import sys
 import idaapi
 
 from ipyida.utils import *
-from ipyida import ida_qtconsole, kernel
+from ipyida.kernel import IPythonKernel, USING_IPYKERNEL5
+from ipyida.ida_qtconsole import IPythonConsole
 
 #-----------------------------------------------------------------------------
 # IDA Plugin
@@ -36,10 +37,10 @@ class IPyIDAPlugIn(idaapi.plugin_t):
         """
         An IDB is opening, load the plugin.
         """
-        self.kernel = kernel.IPythonKernel()
+        self.kernel = IPythonKernel()
         self.kernel.start()
         
-        self.widget = ida_qtconsole.IPythonConsole(self, self.kernel.connection_file)
+        self.widget = IPythonConsole(self, self.kernel.connection_file)
 
         self._startup_hooks = UIHooks()
         self._startup_hooks.ready_to_run = self._ready_to_run
@@ -57,7 +58,7 @@ class IPyIDAPlugIn(idaapi.plugin_t):
         Handle plugin hotkey activation.
         """
         if not self.widget:
-            self.widget = ida_qtconsole.IPythonConsole(self, self.kernel.connection_file)
+            self.widget = IPythonConsole(self, self.kernel.connection_file)
             self.widget.Show()
         else:
             self.widget.setFocusToPrompt()
@@ -94,7 +95,7 @@ def _setup_asyncio_event_loop():
     work properly, which is required for ipykernel >= 5 (more specifically,
     because ipykernel uses tornado, which is backed by asyncio).
     """
-    if not (USING_PY3 and kernel.is_using_ipykernel_5()):
+    if not (USING_PY3 and USING_IPYKERNEL5):
         return
 
     from PyQt5.QtWidgets import QApplication
