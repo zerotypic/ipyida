@@ -57,6 +57,31 @@ class IdaRichJupyterWidget(RichJupyterWidget):
         # Store a reference to the containing IPythonConsole
         self._ida_console = ida_console
 
+        self.clear_action= QtWidgets.QAction("Clear",
+                self,
+                shortcut="Ctrl+X",
+                statusTip="Clear the console",
+                triggered=self.clear)
+
+        self.addAction(self.clear_action)
+
+    def _context_menu_make(self, pos):
+        """
+        Override the right-click QMenu creation of the Qt Console.
+        """
+
+        # ask the qtconsole to create the right click ctx menu as it normally would
+        menu = super(IdaRichJupyterWidget, self)._context_menu_make(pos)
+
+        # remove the print action from the ctx menu.. nobody is going to use this in IDA...
+        menu.removeAction(self.print_action)
+
+        # add the clear action to the terminal, position it *before* the 'Save to..' action
+        menu.insertAction(self.export_action, self.clear_action)
+
+        # return the completed QMenu that will be shown to the user
+        return menu
+
     def _keyboard_quit(self):
         # If the input buffer is empty, and the escape key was pressed,
         # return focus to the widget that was originally holding focus
