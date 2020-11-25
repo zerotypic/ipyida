@@ -256,7 +256,7 @@ class IPythonConsole(idaapi.PluginForm):
         if USING_IDA7API:
             self.prev_focus_widget_name = idaapi.get_widget_title(idaapi.get_current_widget())
             idaapi.activate_widget(idaapi.find_widget(self._window_title), True)
-        else:
+        elif idaapi.IDA_SDK_VERSION > 660:
             # XXX: Not tested as I don't have an older copy of IDA available -- zerotypic
             self.prev_focus_widget_name = idaapi.get_tform_title(idaapi.get_current_tform())
             idaapi.switchto_tform(idaapi.find_tform(self._window_title), True)
