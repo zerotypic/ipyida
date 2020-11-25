@@ -14,13 +14,13 @@ USING_IDA7API = bool(idaapi.IDA_SDK_VERSION >= 700)
 # PyQt5 is in IDA 6.9 and above
 try:
     import PyQt5
-    from PyQt5 import QtGui, QtWidgets
+    from PyQt5 import QtGui, QtWidgets, QtCore
     USING_PYQT5 = True
 
 # PySide for older versions of IDA
 except ImportError:
     import PySide
-    from PySide import QtGui
+    from PySide import QtGui, QtCore
     QtWidgets = QtGui
     USING_PYQT5 = False
 

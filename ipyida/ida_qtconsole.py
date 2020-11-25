@@ -65,6 +65,34 @@ class IdaRichJupyterWidget(RichJupyterWidget):
 
         self.addAction(self.clear_action)
 
+    def eventFilter(self, obj, event):
+        """
+        Override the existing event filter to the Qt Console.
+        """
+
+        # hook a double click event on the console
+        if event.type() == QtCore.QEvent.MouseButtonDblClick:
+
+            # get the word under the mouse double click
+            tc = self._control.cursorForPosition(event.pos())
+            tc.select(QtGui.QTextCursor.WordUnderCursor)
+            text = tc.selectedText()
+
+            # try stripping 'L' off the end of the selection, as the user
+            # might be clicking a hex address in py2 (eg 0x1400048e2L)
+            text = text[:-1] if text[-1] == 'L' else text
+
+            # convert the double clicked word to an integer, and jump to it
+            # as if it were an address in the IDB
+            try:
+                ea = int(text, 16)
+                idaapi.jumpto(ea)
+            except ValueError:
+                pass
+        
+        # pass all other widget/console events through for normal handling...
+        return super(IdaRichJupyterWidget, self).eventFilter(obj, event)
+
     def _context_menu_make(self, pos):
         """
         Override the right-click QMenu creation of the Qt Console.
