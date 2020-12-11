@@ -86,10 +86,18 @@ class IdaRichJupyterWidget(RichJupyterWidget):
             # as if it were an address in the IDB
             try:
                 ea = int(text, 16)
-                idaapi.jumpto(ea)
+                # only jump if the address is valid; idaapi.jumpto
+                # sometimes complains when the address is bad.
+                if idaapi.is_code(idaapi.get_flags(addr)):
+                    idaapi.jumpto(ea)
             except ValueError:
                 pass
-        
+
+            # try to see if the word is a symbol name
+            sym_ea = idaapi.get_name_ea(idaapi.BADADDR, text)
+            if sym_ea != idaapi.BADADDR:
+                idaapi.jumpto(sym_ea)
+
         # pass all other widget/console events through for normal handling...
         return super(IdaRichJupyterWidget, self).eventFilter(obj, event)
 
