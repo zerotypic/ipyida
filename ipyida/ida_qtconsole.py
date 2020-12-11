@@ -88,7 +88,7 @@ class IdaRichJupyterWidget(RichJupyterWidget):
                 ea = int(text, 16)
                 # only jump if the address is valid; idaapi.jumpto
                 # sometimes complains when the address is bad.
-                if idaapi.is_code(idaapi.get_flags(addr)):
+                if idaapi.is_code(idaapi.get_flags(ea)):
                     idaapi.jumpto(ea)
             except ValueError:
                 pass
