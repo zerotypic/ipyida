@@ -80,7 +80,7 @@ class IdaRichJupyterWidget(RichJupyterWidget):
 
             # try stripping 'L' off the end of the selection, as the user
             # might be clicking a hex address in py2 (eg 0x1400048e2L)
-            text = text[:-1] if text[-1] == 'L' else text
+            if len(text) > 0 and text[-1] == 'L': text = text[:-1]
 
             # convert the double clicked word to an integer, and jump to it
             # as if it were an address in the IDB
