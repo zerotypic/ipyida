@@ -59,6 +59,20 @@ from jupyter_client import find_connection_file
 import ipyida.kernel
 
 class IdaRichJupyterWidget(RichJupyterWidget):
+
+    def __init__(self, ida_console, *args, **kwargs):
+        super(IdaRichJupyterWidget, self).__init__(*args, **kwargs)
+        # Store a reference to the containing IPythonConsole
+        self._ida_console = ida_console
+
+        self.clear_action= QtWidgets.QAction("Clear",
+                self,
+                shortcut="Ctrl+X",
+                statusTip="Clear the console",
+                triggered=self.clear)
+
+        self.addAction(self.clear_action)
+
     def _is_complete(self, source, interactive):
         if ipyida.kernel.is_using_ipykernel_5():
             # The kernel is running on the QT runloop so no need to call
@@ -132,6 +146,21 @@ class IdaRichJupyterWidget(RichJupyterWidget):
                 self._control.viewport().setCursor(QtCore.Qt.IBeamCursor)
         return super(IdaRichJupyterWidget, self).eventFilter(obj, event)
 
+    def _keyboard_quit(self):
+        # If the input buffer is empty, and the escape key was pressed,
+        # return focus to the widget that was originally holding focus
+        # before the IPython console took over.
+        prev_widget_name = self._ida_console.prev_focus_widget_name
+        if self.input_buffer == "" and prev_widget_name != None:
+            prev_widget = idaapi.find_widget(prev_widget_name)
+            if prev_widget != None:
+                idaapi.activate_widget(prev_widget, True)
+            self._ida_console.prev_focus_widget_name = None
+        else:
+            super(IdaRichJupyterWidget, self)._keyboard_quit()
+
+
+
 _user_widget_options = {}
 
 def set_widget_options(options):
@@ -151,7 +180,9 @@ class IPythonConsole(idaapi.PluginForm):
     
     def __init__(self, connection_file, *args):
         super(IPythonConsole, self).__init__(*args)
+        self._window_title = "IPython Console"
         self.connection_file = connection_file
+        self.prev_focus_widget_name = None
     
     def OnCreate(self, form):
         try:
@@ -186,15 +217,24 @@ class IPythonConsole(idaapi.PluginForm):
             # See: https://github.com/eset/ipyida/issues/8
             widget_options["gui_completion"] = 'droplist'
         widget_options.update(_user_widget_options)
-        self.ipython_widget = IdaRichJupyterWidget(self.parent, **widget_options)
+        self.ipython_widget = IdaRichJupyterWidget(self, self.parent, **widget_options)
         self.ipython_widget.kernel_manager = self.kernel_manager
         self.ipython_widget.kernel_client = self.kernel_client
         layout.addWidget(self.ipython_widget)
 
         return layout
 
-    def Show(self, name="IPython Console"):
-        r = idaapi.PluginForm.Show(self, name)
+    def Show(self, name=None):
+        if not name:
+            name = self._window_title
+        else:
+            self._window_title = name
+
+        # Save widget that is currently focused.
+        self.prev_focus_widget_name = idaapi.get_widget_title(idaapi.get_current_widget())
+
+        r = idaapi.PluginForm.Show(self, name, 0x40) # 0x40 == PERSIST
+        self.dockWithIDAConsole()
         self.setFocusToPrompt()
         return r
 
@@ -205,6 +245,12 @@ class IPythonConsole(idaapi.PluginForm):
             self.ipython_widget._control.setFocus()
         else:
             print("[IPyIDA] setFocusToPrompt: Widget has no _control attribute.")
+
+    def dockWithIDAConsole(self):
+        """
+        Dock this IPython Console over the IDA Console (Output window).
+        """
+        idaapi.set_dock_pos(self._window_title, "Output window", idaapi.DP_INSIDE)
 
     def OnClose(self, form):
         try:
